@@ -1,46 +1,50 @@
-from flask import Flask, request, jsonify
-from rules import predict_risk
-from data_store import save_customer, save_tickets, get_customer, get_tickets
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List
 
-app = Flask(__name__)
+app = FastAPI()
 
-# 🔹 1. Ingest Customer Data
-@app.route('/ingest/customer', methods=['POST'])
-def ingest_customer():
-    data = request.json
-    customer_id = data['customer_id']
-    customer_data = data['customer']
+# Data storage
+customers = {}
+tickets_db = {}
 
-    save_customer(customer_id, customer_data)
+# Models
+class Ticket(BaseModel):
+    days: int
+    type: str
 
-    return jsonify({"message": "Customer stored"})
+class Customer(BaseModel):
+    contract: str
+    monthly_charges_increase: bool
 
-# 🔹 2. Ingest Ticket Data
-@app.route('/ingest/tickets', methods=['POST'])
-def ingest_tickets():
-    data = request.json
-    customer_id = data['customer_id']
-    tickets = data['tickets']
+class InputData(BaseModel):
+    customer_id: str
+    customer: Customer
+    tickets: List[Ticket]
 
-    save_tickets(customer_id, tickets)
+# Rule logic
+def predict_risk(customer, tickets):
+    ticket_count_30 = len([t for t in tickets if t.days <= 30])
 
-    return jsonify({"message": "Tickets stored"})
+    if ticket_count_30 > 5:
+        return "HIGH"
 
-# 🔹 3. Predict Risk
-@app.route('/predict-risk/<customer_id>', methods=['GET'])
-def predict(customer_id):
-    customer = get_customer(customer_id)
-    tickets = get_tickets(customer_id)
+    if customer.monthly_charges_increase and ticket_count_30 >= 3:
+        return "MEDIUM"
 
-    if not customer:
-        return jsonify({"error": "Customer not found"}), 404
+    if customer.contract == "Month-to-Month":
+        for t in tickets:
+            if t.type == "complaint":
+                return "HIGH"
 
-    risk = predict_risk(customer, tickets)
+    return "LOW"
 
-    return jsonify({
-        "customer_id": customer_id,
-        "risk": risk
-    })
+# API
+@app.post("/predict-risk")
+def predict(data: InputData):
+    risk = predict_risk(data.customer, data.tickets)
+    return {"customer_id": data.customer_id, "risk": risk}
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+@app.get("/")
+def home():
+    return {"message": "API running"}
