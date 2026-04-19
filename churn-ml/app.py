@@ -1,47 +1,36 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List
-import pickle
-from features import extract_features
+import joblib
+import numpy as np
 
 app = FastAPI()
 
 # Load model
-model = pickle.load(open("model.pkl", "rb"))
+model = joblib.load("model/model.pkl")
 
-# Models
-class Ticket(BaseModel):
-    days: int
-    type: str
+@app.get("/")
+def home():
+    return {"message": "Churn Prediction API (ML Model)"}
 
-class Customer(BaseModel):
-    contract: str
-    monthly_charges_increase: bool
+@app.post("/predict")
+def predict(data: dict):
+    try:
+        features = np.array([[
+            data["MonthlyCharges"],
+            data["tenure"],
+            data["ticket_7d"],
+            data["ticket_30d"],
+            data["ticket_90d"],
+            data["sentiment"],
+            data["monthly_change"]
+        ]])
 
-class InputData(BaseModel):
-    customer_id: str
-    customer: Customer
-    tickets: List[Ticket]
+        prediction = model.predict(features)[0]
+        probability = model.predict_proba(features)[0][1]
 
-@app.post("/predict-risk")
-def predict(data: InputData):
-    features = extract_features(
-        data.customer.dict(),
-        [t.dict() for t in data.tickets]
-    )
-
-    pred = model.predict([features])[0]
-
-    risk = "HIGH" if pred == 1 else "LOW"
-
-    return {
-        "customer_id": data.customer_id,
-        "risk": risk,
-        "features": {
-            "freq_7": features[0],
-            "freq_30": features[1],
-            "freq_90": features[2],
-            "avg_gap": features[3],
-            "charges_increase": features[4]
+        return {
+            "churn_prediction": int(prediction),
+            "churn_probability": float(probability)
         }
-    }
+
+    except Exception as e:
+        return {"error": str(e)}

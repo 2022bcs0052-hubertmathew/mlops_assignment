@@ -1,56 +1,78 @@
 import pandas as pd
 import numpy as np
+import joblib
+
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import f1_score, precision_score, roc_auc_score
-import pickle
+from sklearn.metrics import f1_score, roc_auc_score, precision_recall_curve
 
-# 🔹 Load dataset
-df = pd.read_csv("WA_Fn-UseC_-Telco-Customer-Churn.csv")
+# -------------------------------
+# Load Dataset
+# -------------------------------
+df = pd.read_csv("data/telco.csv")
 
-# 🔹 Preprocessing
-df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors="coerce")
-df.dropna(inplace=True)
+# Example preprocessing (modify based on your dataset)
+df = df.dropna()
 
-# 🔹 Convert target
-df["Churn"] = df["Churn"].map({"Yes": 1, "No": 0})
+# Convert target
+df['Churn'] = df['Churn'].map({'Yes': 1, 'No': 0})
 
-# 🔹 Create REAL features (not random)
+# -------------------------------
+# Feature Engineering
+# -------------------------------
+# Simulated features (since ticket logs are not in dataset)
 
-# Ticket-like behavior derived from tenure
-df["freq_90"] = (df["tenure"] // 3).astype(int)
-df["freq_30"] = (df["tenure"] // 6).astype(int)
-df["freq_7"] = (df["tenure"] // 12).astype(int)
+df['ticket_7d'] = np.random.randint(0, 5, len(df))
+df['ticket_30d'] = np.random.randint(0, 10, len(df))
+df['ticket_90d'] = np.random.randint(0, 20, len(df))
+df['sentiment'] = np.random.uniform(-1, 1, len(df))
+df['monthly_change'] = np.random.uniform(-20, 20, len(df))
 
-# Avg gap (inverse of frequency)
-df["avg_gap"] = (df["tenure"] + 1) / (df["freq_30"] + 1)
+features = [
+    'MonthlyCharges',
+    'tenure',
+    'ticket_7d',
+    'ticket_30d',
+    'ticket_90d',
+    'sentiment',
+    'monthly_change'
+]
 
-# Charges increase (based on charges vs median)
-df["charges_increase"] = (df["MonthlyCharges"] > df["MonthlyCharges"].median()).astype(int)
+X = df[features]
+y = df['Churn']
 
-# 🔹 Features (match API exactly)
-X = df[["freq_7", "freq_30", "freq_90", "avg_gap", "charges_increase"]]
-y = df["Churn"]
-
-# 🔹 Train-test split
+# -------------------------------
+# Train-Test Split
+# -------------------------------
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
-# 🔹 Train model
-model = RandomForestClassifier(class_weight="balanced", random_state=42)
-model.fit(X_train, y_train)
+# -------------------------------
+# Pipeline (IMPORTANT for MLOps)
+# -------------------------------
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('model', RandomForestClassifier(n_estimators=100))
+])
 
-# 🔹 Predictions
-y_pred = model.predict(X_test)
-y_prob = model.predict_proba(X_test)[:, 1]
+# Train
+pipeline.fit(X_train, y_train)
 
-# 🔹 Metrics
+# -------------------------------
+# Evaluation
+# -------------------------------
+y_pred = pipeline.predict(X_test)
+y_prob = pipeline.predict_proba(X_test)[:, 1]
+
 print("F1 Score:", f1_score(y_test, y_pred))
-print("Precision:", precision_score(y_test, y_pred))
 print("ROC-AUC:", roc_auc_score(y_test, y_prob))
 
-# 🔹 Save model
-with open("model.pkl", "wb") as f:
-    pickle.dump(model, f)
+# -------------------------------
+# Save Model
+# -------------------------------
+joblib.dump(pipeline, "model/model.pkl")
 
+print("Model saved successfully!")
